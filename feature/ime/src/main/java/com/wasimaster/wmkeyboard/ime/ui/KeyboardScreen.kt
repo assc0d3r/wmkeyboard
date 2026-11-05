@@ -446,6 +446,7 @@ import com.wasimaster.wmkeyboard.core.settings.EmojiBarMode
 import com.wasimaster.wmkeyboard.core.settings.KeyboardAlignment
 import com.wasimaster.wmkeyboard.core.settings.HoldRepeatCursorTools
 import com.wasimaster.wmkeyboard.core.settings.GestureSettings
+import com.wasimaster.wmkeyboard.core.settings.GlideTrailColorMode
 import com.wasimaster.wmkeyboard.core.settings.GlideCommitColorScope
 import com.wasimaster.wmkeyboard.core.settings.SymbolRowScroll
 import com.wasimaster.wmkeyboard.core.settings.GlidePickerChoicesRange
@@ -671,6 +672,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 import kotlin.random.Random
@@ -2698,6 +2700,8 @@ internal enum class KeyPreviewBandMode {
  * one, but publishes nothing process-wide that the real keyboard owns.
  */
 internal val LocalKeyboardPreviewHost = staticCompositionLocalOf { false }
+
+private val LocalGlidePressTrails = staticCompositionLocalOf<List<GlideTrail>> { emptyList() }
 
 /** How the host wants the key-preview band handled; see [KeyPreviewBandMode]. */
 internal val LocalKeyPreviewBand = staticCompositionLocalOf { KeyPreviewBandMode.WINDOW }
@@ -17481,19 +17485,64 @@ internal fun DrawScope.drawTrailBand(
     opacity: Float,
     widthPx: Float,
     keepMs: Long,
+    fadeSpeed: Float = 1f,
+    rainbow: Boolean = false,
 ) {
-    val life = trail.lineLife(trail.revision, keepMs)
+    val life = fadeTrailLife(trail.lineLife(trail.revision, keepMs), fadeSpeed)
     if (life <= 0f) return
-    drawLine(
-        color = color.copy(alpha = opacity * life),
-        start = Offset(trail.startX, trail.startY),
-        end = if (trail.straight) {
-            Offset(trail.headX, trail.headY)
-        } else {
-            Offset(trail.startX, trail.headY)
-        },
-        strokeWidth = widthPx,
-        cap = StrokeCap.Round,
+    val start = Offset(trail.startX, trail.startY)
+    val end = if (trail.straight) Offset(trail.headX, trail.headY) else Offset(trail.startX, trail.headY)
+    if (rainbow) {
+        drawLine(
+            brush = Brush.linearGradient(
+                colors = (0..6).map { Color.hsv(it * 60f, 0.9f, 1f) },
+                start = start,
+                end = end,
+            ),
+            start = start,
+            end = end,
+            strokeWidth = widthPx,
+            cap = StrokeCap.Round,
+            alpha = opacity * life,
+        )
+    } else {
+        drawLine(
+            color = color.copy(alpha = opacity * life),
+            start = start,
+            end = end,
+            strokeWidth = widthPx,
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
+internal fun fadeTrailLife(life: Float, fadeSpeed: Float): Float =
+    life.coerceIn(0f, 1f).toDouble().pow(fadeSpeed.coerceIn(0.5f, 3f).toDouble()).toFloat()
+
+internal fun glidePressInfluence(keyCenter: Offset, finger: Offset, radius: Float): Float {
+    if (radius <= 0f) return 0f
+    val distance = hypot(keyCenter.x - finger.x, keyCenter.y - finger.y)
+    return ((radius - distance) / radius).coerceIn(0f, 1f)
+}
+
+internal fun rainbowTrailColor(index: Int, count: Int): Color =
+    Color.hsv(360f * index.coerceIn(0, (count - 1).coerceAtLeast(0)) / (count - 1).coerceAtLeast(1), 0.9f, 1f)
+
+internal fun DrawScope.drawGlideHeadBloom(x: Float, y: Float, tint: Color, strength: Float) {
+    val radius = 48.dp.toPx()
+    val center = Offset(x, y)
+    drawCircle(
+        brush = Brush.radialGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.28f * strength),
+                tint.copy(alpha = 0.16f * strength),
+                Color.Transparent,
+            ),
+            center = center,
+            radius = radius,
+        ),
+        radius = radius,
+        center = center,
     )
 }
 
@@ -18409,7 +18458,17 @@ internal fun KeyPreviewOverlay(
                         } else {
                             bubbleHeightPx
                         }
-                        KeyPreviewBubble(preview, popup, onKeyStyle, heightPx, labelCache)
+                        KeyPreviewBubble(
+                            preview,
+                            popup,
+                            onKeyStyle,
+                            heightPx,
+                            labelCache,
+                            settings.gesture.glassPressEffects &&
+                                settings.gesture.glassPressStrength > 0f &&
+                                !settings.reduceMotion,
+                            settings.gesture.glassPressStrength,
+                        )
                     }
                 }
             },
@@ -18461,11 +18520,24 @@ private fun KeyPreviewBubble(
     onKeyStyle: Boolean,
     heightPx: Int,
     labelCache: TextMeasurer,
+    glassPressEffects: Boolean,
+    glassPressStrength: Float,
 ) {
     val kb = LocalKbTheme.current
     val density = LocalDensity.current
     val shape = kb.popupShape()
     val border = kb.popupSurfaceBorder()
+    val popupScale = remember(preview.token) { Animatable(if (glassPressEffects) 0.9f else 1f) }
+    LaunchedEffect(preview.token, glassPressEffects) {
+        if (glassPressEffects) {
+            popupScale.animateTo(
+                1f,
+                spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow),
+            )
+        } else {
+            popupScale.snapTo(1f)
+        }
+    }
     val labelColor = preview.popupText
         ?: popup.textColor?.let { Color(it.toInt()) }
         ?: kb.popupText
@@ -18475,6 +18547,10 @@ private fun KeyPreviewBubble(
     // The next tap has to reach that row through it.
     Box(
         modifier = Modifier
+            .graphicsLayer {
+                scaleX = popupScale.value
+                scaleY = popupScale.value
+            }
             .shadow(elevationFor(kb.popupShapeKind, kb.popupElevation), shape, clip = false)
             .then(if (border != null) Modifier.border(border, shape) else Modifier)
             // Glass like the keys under it, for a glass theme.
@@ -18489,6 +18565,22 @@ private fun KeyPreviewBubble(
                     ?: kb.popupFill(FrostSurface.POPUPS),
                 labelColor,
             )
+            .drawBehind {
+                if (glassPressEffects && glassPressStrength > 0f) {
+                    val center = Offset(size.width / 2f, size.height / 2f)
+                    drawRect(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color.White.copy(alpha = 0.24f * glassPressStrength),
+                                kb.accent.copy(alpha = 0.12f * glassPressStrength),
+                                Color.Transparent,
+                            ),
+                            center = center,
+                            radius = max(size.width, size.height) * 0.9f,
+                        ),
+                    )
+                }
+            }
             .clip(shape)
             .height(with(density) { heightPx.toDp() })
             .widthIn(
@@ -18861,6 +18953,9 @@ private fun KeyRows(
     // One per finger of a multi-finger swipe (#647), and whether one has taken
     // the touch now on the grid; see [FingerSwipeGate].
     val fingerTrails = remember { Array(FingerSwipeCounts.last) { GlideTrail() } }
+    val glidePressTrails = remember(trail, trail2, fingerTrails) {
+        listOf(trail, trail2, *fingerTrails)
+    }
     val fingerGate = remember { FingerSwipeGate() }
     val duetScope = rememberCoroutineScope()
     // The quad the trail is filled through, rewound per segment and kept across
@@ -18934,7 +19029,12 @@ private fun KeyRows(
     val glideSettings = rememberUpdatedState(state.settings.gesture)
     val hapticOn = rememberUpdatedState(state.settings.haptics.enabled)
     val kbTheme = LocalKbTheme.current
-    val trailColor = kbTheme.gestureTrail
+    val trailColorMode = state.settings.gesture.trailColorMode
+    val trailColor = when (trailColorMode) {
+        GlideTrailColorMode.THEME -> kbTheme.gestureTrail
+        GlideTrailColorMode.CUSTOM -> Color(state.settings.gesture.trailCustomColor.toInt())
+        GlideTrailColorMode.RAINBOW -> kbTheme.gestureTrail
+    }
     // The board's preview bubbles: the screen's, drawn by the frame over
     // everything it holds; or this grid's own when no frame is composed (a
     // grid on its own in a test), drawn here and lifted over the top row.
@@ -18990,6 +19090,11 @@ private fun KeyRows(
     val trailMs = gesture.trailDurationMs.toLong()
     val trailOpacity = gesture.trailOpacity
     val trailHeadWidth = gesture.trailWidthDp
+    val trailFadeSpeed = gesture.trailFadeSpeed
+    val glassPressStrength = gesture.glassPressStrength
+    val glassPressEffects = gesture.glassPressEffects &&
+        glassPressStrength > 0f &&
+        !state.settings.reduceMotion
     val startSlop = gesture.startThresholdSlop
     val cooldownMs = gesture.postTypeCooldownMs
     // Which key a glide reads as an apostrophe. Read through a State because the
@@ -20775,31 +20880,35 @@ private fun KeyRows(
             // the shift latch, so a tap for one capital (or the board's own
             // sentence-start capital) leaves the digits where they are.
             val extraRow = if (numberRow) rememberExtraRow(state, fillRow, chordDrag.shifted) else null
-            KeyGridRows(
-                state = state,
-                gridState = gridState,
-                layout = layout,
-                bodyRows = bodyRows,
-                extraRow = extraRow,
-                palette = palette,
-                gridWeight = gridWeight,
-                settings = settings,
-                split = split,
-                numericField = numericField,
-                mode = mode,
-                keyPreview = keyPreview,
-                onKey = keyTapOnKey,
-                onText = stampedOnText,
-                onCursorMove = onCursorMove,
-                onLayoutSelect = onLayoutSelect,
-                onKeyPositioned = onKeyPositioned,
-                onSpacePositioned = onSpacePositioned,
-                smartResolve = smartResolve,
-                onBurst = onBurst,
-                onHandwritingStroke = onKeyboardHandwritingStroke,
-                onHandwritingUndo = onHandwritingUndo,
-                onHandwritingDownload = onHandwritingDownload,
-            )
+            CompositionLocalProvider(
+                LocalGlidePressTrails provides glidePressTrails,
+            ) {
+                KeyGridRows(
+                    state = state,
+                    gridState = gridState,
+                    layout = layout,
+                    bodyRows = bodyRows,
+                    extraRow = extraRow,
+                    palette = palette,
+                    gridWeight = gridWeight,
+                    settings = settings,
+                    split = split,
+                    numericField = numericField,
+                    mode = mode,
+                    keyPreview = keyPreview,
+                    onKey = keyTapOnKey,
+                    onText = stampedOnText,
+                    onCursorMove = onCursorMove,
+                    onLayoutSelect = onLayoutSelect,
+                    onKeyPositioned = onKeyPositioned,
+                    onSpacePositioned = onSpacePositioned,
+                    smartResolve = smartResolve,
+                    onBurst = onBurst,
+                    onHandwritingStroke = onKeyboardHandwritingStroke,
+                    onHandwritingUndo = onHandwritingUndo,
+                    onHandwritingDownload = onHandwritingDownload,
+                )
+            }
         }
 
         // The theme's stickers, laid over the keys and under the transient
@@ -20885,7 +20994,13 @@ private fun KeyRows(
                 // cone and a line that leaned with the finger would promise a
                 // precision the test never asks for (discussion #102).
                 if (stroke.straight || stroke.flick) {
-                    drawTrailBand(stroke, trailColor, trailOpacity, headWidth, trailMs)
+                    drawTrailBand(
+                        stroke, trailColor, trailOpacity, headWidth, trailMs, trailFadeSpeed,
+                        rainbow = trailColorMode == GlideTrailColorMode.RAINBOW,
+                    )
+                    if (glassPressEffects) {
+                        drawGlideHeadBloom(stroke.headX, stroke.headY, kbTheme.accent, glassPressStrength)
+                    }
                     return@Canvas
                 }
                 // The comet is *filled* as a ribbon rather than stroked as a
@@ -20921,7 +21036,7 @@ private fun KeyRows(
                 var edge = prevEdge
                 for (i in 0 until count) {
                     val nextEdge = if (i + 1 < count) edgeAt(i + 1) else edge
-                    val life = stroke.sampleLife(i, trailMs)
+                    val life = fadeTrailLife(stroke.sampleLife(i, trailMs), trailFadeSpeed)
                     if (life > 0f) {
                         val here = Offset(stroke.x(i), stroke.y(i))
                         val back = if (i > 0) Offset(stroke.x(i - 1), stroke.y(i - 1)) else here
@@ -20963,11 +21078,18 @@ private fun KeyRows(
                         trailQuad.close()
                         drawPath(
                             trailQuad,
-                            color = trailColor.copy(alpha = trailOpacity * life),
+                            color = (if (trailColorMode == GlideTrailColorMode.RAINBOW) {
+                                rainbowTrailColor(i, count)
+                            } else {
+                                trailColor
+                            }).copy(alpha = trailOpacity * life),
                         )
                     }
                     prevEdge = edge
                     edge = nextEdge
+                }
+                if (glassPressEffects) {
+                    drawGlideHeadBloom(stroke.headX, stroke.headY, kbTheme.accent, glassPressStrength)
                 }
             }
         }
@@ -24992,6 +25114,13 @@ internal fun KeyButton(
     val shownLanguage = languagePreview
         ?: languageSwitchEcho.shown?.layoutId?.takeIf { key.action == KeyAction.Space }
     val scope = rememberCoroutineScope()
+    val pressMotion = remember { Animatable(0f) }
+    val pressEffectStrength = settings.gesture.glassPressStrength
+    val pressEffectOn = settings.gesture.glassPressEffects &&
+        pressEffectStrength > 0f &&
+        !settings.reduceMotion
+    val pressTilt = if ((key.label.hashCode() and 1) == 0) -1f else 1f
+    val glidePressTrails = LocalGlidePressTrails.current
     // The role-carrying locals, because this is the key grid: a sound pack may
     // have recorded the spacebar separately from the letters.
     val rawKeyPress = LocalKeyRoleFeedback.current
@@ -25263,6 +25392,17 @@ internal fun KeyButton(
                         // be dropped silently.
                         if (down) gate.press(debounceMs.value)
                         pressed.value = down
+                        if (pressEffectOn) {
+                            scope.launch {
+                                pressMotion.animateTo(
+                                    if (down) 1f else 0f,
+                                    spring(
+                                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                                        stiffness = Spring.StiffnessMediumLow,
+                                    ),
+                                )
+                            }
+                        }
                         alternatesPrewarm[0]?.cancel()
                         val prewarmAt = settings.longPressDelayMs - AlternatesPrewarmLeadMs
                         if (down && prewarmAt >= AlternatesPrewarmFloorMs && key.opensAlternatesPopup()) {
@@ -25397,7 +25537,56 @@ internal fun KeyButton(
             // each release re-recorded every key's face, label and hint, plus
             // the toolbar and the strip — 2-5 ms of display-list recording per
             // frame on a CPH2481, the largest piece of a typing frame.
-            .graphicsLayer()
+            .graphicsLayer {
+                if (pressEffectOn) {
+                    val bounds = keyBounds.value
+                    var glideInfluence = 0f
+                    var glideDx = 0f
+                    var glideDy = 0f
+                    var glideDistance = Float.POSITIVE_INFINITY
+                    if (bounds.width > 0f && bounds.height > 0f) {
+                        val center = bounds.center
+                        val radius = max(bounds.width, bounds.height) * 1.6f
+                        for (trail in glidePressTrails) {
+                            if (!trail.visible || trail.released) continue
+                            val finger = Offset(trail.headX, trail.headY)
+                            val dx = center.x - finger.x
+                            val dy = center.y - finger.y
+                            val influence = glidePressInfluence(center, finger, radius)
+                            if (influence > glideInfluence) {
+                                glideInfluence = influence
+                                glideDx = dx
+                                glideDy = dy
+                                glideDistance = hypot(dx, dy)
+                            }
+                        }
+                    }
+                    val pressMotionAmount = pressMotion.value * pressEffectStrength
+                    val glideMotionAmount = glideInfluence * pressEffectStrength
+                    scaleX = 1f - 0.025f * pressMotionAmount - 0.012f * glideMotionAmount
+                    scaleY = 1f - 0.055f * pressMotionAmount - 0.025f * glideMotionAmount
+                    rotationZ = pressTilt * 1.8f * pressMotionAmount +
+                        if (glideDistance > 0f && glideDistance.isFinite()) {
+                            glideDx / glideDistance * 1.2f * glideMotionAmount
+                        } else {
+                            0f
+                        }
+                    if (glideDistance > 0f && glideDistance.isFinite()) {
+                        val displacement = max(bounds.width, bounds.height) * 0.06f * glideMotionAmount
+                        translationX = glideDx / glideDistance * displacement
+                        translationY = glideDy / glideDistance * displacement
+                    } else {
+                        translationX = 0f
+                        translationY = 0f
+                    }
+                } else {
+                    scaleX = 1f
+                    scaleY = 1f
+                    rotationZ = 0f
+                    translationX = 0f
+                    translationY = 0f
+                }
+            }
             // The face and its sheen are painted here rather than by
             // Modifier.background, because both depend on the press: read inside
             // the draw lambda, a press invalidates only the draw, so pressing a
@@ -25444,6 +25633,19 @@ internal fun KeyButton(
                 // A lens draws its own rim of light; the gradient rim's dark edge would sit on it.
                 val rim = frost?.takeIf { glass?.lensed != true }?.let { RimPaint.of(it, keyShape, size, layoutDirection, this) }
                 val grain = frost?.let { GrainPaint.of(it, outline) }
+                val pressBloom = if (pressEffectOn && pressEffectStrength > 0f) {
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.34f * pressEffectStrength),
+                            kb.accent.copy(alpha = 0.18f * pressEffectStrength),
+                            Color.Transparent,
+                        ),
+                        center = Offset(size.width / 2f, size.height / 2f),
+                        radius = max(size.width, size.height) * 0.8f,
+                    )
+                } else {
+                    null
+                }
                 // The skin replaces the face outright; a material dresses it.
                 // Both are fitted to this size here, so a press only draws.
                 val skin = skinSlot?.let {
@@ -25463,6 +25665,7 @@ internal fun KeyButton(
                     glass?.draw(this, down)
                     if (skin != null) {
                         skin.draw(this, down)
+                        if (down && pressBloom != null) drawOutline(outline, pressBloom)
                         return@onDrawBehind
                     }
                     material?.drawUnder(this, down)
@@ -25480,6 +25683,7 @@ internal fun KeyButton(
                     material?.drawOver(this, down)
                     rim?.draw(this)
                     grain?.draw(this)
+                    if (down && pressBloom != null) drawOutline(outline, pressBloom)
                 }
             }
             .then(

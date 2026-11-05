@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.scale
@@ -49,6 +50,7 @@ import com.wasimaster.wmkeyboard.core.layout.panelFlexRows
 import com.wasimaster.wmkeyboard.core.layout.panelRowTops
 import com.wasimaster.wmkeyboard.core.layout.rowScaledKeyHeight
 import com.wasimaster.wmkeyboard.core.layout.spanSlots
+import com.wasimaster.wmkeyboard.core.settings.GlideTrailColorMode
 import com.wasimaster.wmkeyboard.ime.KeyboardUiState
 import com.wasimaster.wmkeyboard.ime.shiftCasesText
 import kotlin.math.roundToInt
@@ -200,7 +202,23 @@ internal fun PanelLayoutGrid(
         if (trail.visible) {
             val kb = LocalKbTheme.current
             Canvas(modifier = Modifier.matchParentSize()) {
-                drawTrailBand(trail, kb.gestureTrail, gesture.trailOpacity, gesture.trailWidthDp.dp.toPx(), trailMs)
+                val color = when (gesture.trailColorMode) {
+                    GlideTrailColorMode.THEME -> kb.gestureTrail
+                    GlideTrailColorMode.CUSTOM -> Color(gesture.trailCustomColor.toInt())
+                    GlideTrailColorMode.RAINBOW -> kb.gestureTrail
+                }
+                drawTrailBand(
+                    trail,
+                    color,
+                    gesture.trailOpacity,
+                    gesture.trailWidthDp.dp.toPx(),
+                    trailMs,
+                    gesture.trailFadeSpeed,
+                    rainbow = gesture.trailColorMode == GlideTrailColorMode.RAINBOW,
+                )
+                if (gesture.glassPressEffects && gesture.glassPressStrength > 0f && !settings.reduceMotion) {
+                    drawGlideHeadBloom(trail.headX, trail.headY, kb.accent, gesture.glassPressStrength)
+                }
             }
         }
         if (hoistedPreview == null) {

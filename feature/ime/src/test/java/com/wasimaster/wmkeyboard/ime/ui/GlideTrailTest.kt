@@ -1,6 +1,7 @@
 package com.wasimaster.wmkeyboard.ime.ui
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import kotlin.math.abs
 import kotlin.math.hypot
 import org.junit.Assert.assertEquals
@@ -311,5 +312,31 @@ class GlideTrailTest {
         trail.begin()
         trail.add(5f, 5f, 0L, KEEP_MS)
         assertEquals(Offset.Zero, trail.sampleEdge(0, trail.sampleCount(trail.revision), 8f))
+    }
+
+    @Test
+    fun `fade speed changes the opacity curve without changing its endpoints`() {
+        assertEquals(0f, fadeTrailLife(0f, 2f), 0f)
+        assertEquals(1f, fadeTrailLife(1f, 0.5f), 0f)
+        assertEquals(0.5f, fadeTrailLife(0.5f, 1f), 1e-6f)
+        assertTrue(fadeTrailLife(0.5f, 2f) < fadeTrailLife(0.5f, 1f))
+        assertTrue(fadeTrailLife(0.5f, 0.5f) > fadeTrailLife(0.5f, 1f))
+    }
+
+    @Test
+    fun `glide press motion reaches nearby keys and falls off with distance`() {
+        val center = Offset(50f, 50f)
+        assertEquals(1f, glidePressInfluence(center, center, 100f), 0f)
+        assertEquals(0.5f, glidePressInfluence(center, Offset(100f, 50f), 100f), 0f)
+        assertEquals(0f, glidePressInfluence(center, Offset(150f, 50f), 100f), 0f)
+        assertEquals(0f, glidePressInfluence(center, center, 0f), 0f)
+    }
+
+    @Test
+    fun `rainbow trail colors span the hue wheel`() {
+        assertEquals(Color.hsv(0f, 0.9f, 1f), rainbowTrailColor(0, 3))
+        assertEquals(Color.hsv(180f, 0.9f, 1f), rainbowTrailColor(1, 3))
+        assertEquals(Color.hsv(360f, 0.9f, 1f), rainbowTrailColor(2, 3))
+        assertEquals(rainbowTrailColor(0, 1), rainbowTrailColor(10, 1))
     }
 }

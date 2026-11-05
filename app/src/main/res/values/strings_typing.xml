@@ -12,6 +12,7 @@
     <string name="typing_group_glide_tuning_summary">Error radius, pause, loop, wiggle and shapes per word</string>
     <string name="typing_group_glide_tuning_info">These values are how the keyboard reads a glide: how near the keys your finger has to go for a word to be offered at all, and what tells it that you wrote a letter twice. They ship at the values the keyboard was measured with. Move one, glide a few sentences, and press the reset on the row if it was worse. Nothing here can break the keyboard.</string>
     <string name="typing_group_glide_trail_title">Glide trail and preview</string>
+    <string name="typing_group_press_effects_title">Touch feedback</string>
     <string name="typing_group_spacebar_title">Spacebar gestures</string>
     <string name="typing_group_backspace_title">Delete keys</string>
     <string name="typing_group_enter_title">Enter key</string>
@@ -833,6 +834,20 @@
 
     <string name="typing_trail_length_title">Trail length</string>
     <string name="typing_trail_length_subtitle">How long the trail stays behind your finger</string>
+    <string name="typing_trail_fade_speed_title">Trail fade speed</string>
+    <string name="typing_trail_fade_speed_subtitle">How quickly the trail fades from head to tail</string>
+    <string name="typing_trail_color_mode_title">Trail color</string>
+    <string name="typing_trail_color_mode_subtitle">Use the theme color, choose one, or show a rainbow</string>
+    <string name="typing_trail_color_theme">Theme</string>
+    <string name="typing_trail_color_custom">Custom</string>
+    <string name="typing_trail_color_rainbow">Rainbow</string>
+    <string name="typing_trail_custom_color_title">Custom trail color</string>
+    <string name="typing_trail_custom_color_subtitle">Choose a color with the HSV wheel</string>
+    <string name="typing_glass_press_title">Glass press effects</string>
+    <string name="typing_glass_press_subtitle">Light bloom, springing keys and popup feedback</string>
+    <string name="typing_glass_press_info">Adds a soft radial bloom and a small springing dip when a key is pressed. Nearby keys dip and wobble around a glide, the bloom follows its head, and floating key previews spring into place. Turn this off to keep the current flat press response.</string>
+    <string name="typing_glass_press_strength_title">Glass effect strength</string>
+    <string name="typing_glass_press_strength_subtitle">Adjust the bloom and key movement together</string>
 
     <!-- Typing settings screen, Gestures group. These shape the pill that floats
          above your finger with the word a glide has decoded so far. -->

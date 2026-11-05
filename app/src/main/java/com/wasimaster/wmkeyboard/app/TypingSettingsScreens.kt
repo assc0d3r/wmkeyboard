@@ -82,6 +82,7 @@ import com.wasimaster.wmkeyboard.core.settings.PickerTimeoutRange
 import com.wasimaster.wmkeyboard.core.icons.IconSlots
 import com.wasimaster.wmkeyboard.ime.ui.SlotIcon
 import com.wasimaster.wmkeyboard.core.settings.GestureSettings
+import com.wasimaster.wmkeyboard.core.settings.GlideTrailColorMode
 import com.wasimaster.wmkeyboard.core.settings.GlideApostropheKey
 import com.wasimaster.wmkeyboard.core.settings.ShiftGlideMode
 import com.wasimaster.wmkeyboard.core.settings.TWO_THUMB_PAUSE_RANGE
@@ -2653,6 +2654,46 @@ internal fun TypingGlideSettings(
                     default = SettingsDefaults.gesture.trailOpacity,
                 ) { scope.launch { repository.setGestureTrailOpacity(it) } }
             }
+            item(level = SettingLevel.STANDARD) {
+                ChoiceSetting(
+                    title = R.string.typing_trail_color_mode_title,
+                    subtitle = stringResource(R.string.typing_trail_color_mode_subtitle),
+                    options = GlideTrailColorMode.entries.map { mode ->
+                        mode to stringResource(
+                            when (mode) {
+                                GlideTrailColorMode.THEME -> R.string.typing_trail_color_theme
+                                GlideTrailColorMode.CUSTOM -> R.string.typing_trail_color_custom
+                                GlideTrailColorMode.RAINBOW -> R.string.typing_trail_color_rainbow
+                            },
+                        )
+                    },
+                    selected = settings.watch { it.gesture.trailColorMode },
+                    default = SettingsDefaults.gesture.trailColorMode,
+                ) { scope.launch { repository.setGestureTrailColorMode(it) } }
+            }
+            item(
+                visible = settings.watch { it.gesture.trailColorMode == GlideTrailColorMode.CUSTOM },
+                level = SettingLevel.ADVANCED,
+            ) {
+                val color = settings.watch { it.gesture.trailCustomColor }
+                ColorSetting(
+                    R.string.typing_trail_custom_color_title,
+                    subtitle = stringResource(R.string.typing_trail_custom_color_subtitle),
+                    color = color,
+                    fallback = color,
+                ) { scope.launch { repository.setGestureTrailCustomColor(it) } }
+            }
+            item(level = SettingLevel.ADVANCED) {
+                val valueFormat = stringResource(R.string.typing_value_multiplier_suffix)
+                SliderSetting(
+                    R.string.typing_trail_fade_speed_title,
+                    subtitle = stringResource(R.string.typing_trail_fade_speed_subtitle),
+                    value = settings.watch { it.gesture.trailFadeSpeed },
+                    range = 0.5f..3f,
+                    display = { valueFormat.format("%.1f".format(it)) },
+                    default = SettingsDefaults.gesture.trailFadeSpeed,
+                ) { scope.launch { repository.setGestureTrailFadeSpeed(it) } }
+            }
             // The pill that rides above the finger with the word the stroke has
             // decoded to so far. Glide-word only: handwriting draws ink and
             // recognizes on lift, so there is no running word to float.
@@ -2731,6 +2772,28 @@ internal fun TypingGlideSettings(
                         info = stringResource(R.string.typing_glide_strip_preview_info),
                         default = SettingsDefaults.gesture.stripPreviewOnly,
                     ) { scope.launch { repository.setGestureStripPreviewOnly(it) } }
+                }
+            }
+            SettingsGroup(stringResource(R.string.typing_group_press_effects_title)) {
+                item {
+                    ToggleSetting(
+                        R.string.typing_glass_press_title,
+                        stringResource(R.string.typing_glass_press_subtitle),
+                        checked = settings.watch { it.gesture.glassPressEffects },
+                        info = stringResource(R.string.typing_glass_press_info),
+                        default = SettingsDefaults.gesture.glassPressEffects,
+                    ) { scope.launch { repository.setGestureGlassPressEffects(it) } }
+                }
+                item(visible = settings.watch { it.gesture.glassPressEffects }, level = SettingLevel.ADVANCED) {
+                    val percentFormat = stringResource(R.string.typing_value_percent)
+                    SliderSetting(
+                        R.string.typing_glass_press_strength_title,
+                        subtitle = stringResource(R.string.typing_glass_press_strength_subtitle),
+                        value = settings.watch { it.gesture.glassPressStrength },
+                        range = 0f..1f,
+                        display = { percentFormat.format((it * 100).roundToInt()) },
+                        default = SettingsDefaults.gesture.glassPressStrength,
+                    ) { scope.launch { repository.setGestureGlassPressStrength(it) } }
                 }
             }
         }

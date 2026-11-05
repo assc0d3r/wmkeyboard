@@ -8362,6 +8362,8 @@ val GlideKeptStrokesRange = 0..com.wasimaster.wmkeyboard.core.prediction.GlideRe
 val GlideFrequencyWeightRange = 0.25f..1f
 
 /** Glide-typing behaviour and swipe-trail appearance. See [KeyboardSettings.gesture]. */
+enum class GlideTrailColorMode { THEME, CUSTOM, RAINBOW }
+
 data class GestureSettings(
     /**
      * Swiping over the spacebar mid-glide commits the current word and starts a
@@ -8616,6 +8618,16 @@ data class GestureSettings(
     val trailDurationMs: Int = 350,
     /** Peak opacity of the trail, 0..1. */
     val trailOpacity: Float = 0.55f,
+    /** How quickly the trail's opacity falls along its length; 1 is linear. */
+    val trailFadeSpeed: Float = 1f,
+    /** Whether the trail follows the theme, one chosen colour, or a spectrum. */
+    val trailColorMode: GlideTrailColorMode = GlideTrailColorMode.THEME,
+    /** Explicit trail colour when [trailColorMode] is [GlideTrailColorMode.CUSTOM]. */
+    val trailCustomColor: Long = 0xFF40C4FFL,
+    /** Enables the optional glass-like press bloom and key spring. */
+    val glassPressEffects: Boolean = false,
+    /** Strength of the glass press bloom and key movement, 0..1. */
+    val glassPressStrength: Float = 0.7f,
     /**
      * Whether the word a glide currently decodes to floats above the fingertip
      * while the stroke is still down.
@@ -11209,6 +11221,11 @@ class SettingsRepository(private val context: Context) {
         private val GESTURE_TRAIL_WIDTH_DP = floatPreferencesKey("gesture_trail_width_dp")
         private val GESTURE_TRAIL_DURATION_MS = intPreferencesKey("gesture_trail_duration_ms")
         private val GESTURE_TRAIL_OPACITY = floatPreferencesKey("gesture_trail_opacity")
+        private val GESTURE_TRAIL_FADE_SPEED = floatPreferencesKey("gesture_trail_fade_speed")
+        private val GESTURE_TRAIL_COLOR_MODE = stringPreferencesKey("gesture_trail_color_mode")
+        private val GESTURE_TRAIL_CUSTOM_COLOR = longPreferencesKey("gesture_trail_custom_color")
+        private val GESTURE_GLASS_PRESS_EFFECTS = booleanPreferencesKey("gesture_glass_press_effects")
+        private val GESTURE_GLASS_PRESS_STRENGTH = floatPreferencesKey("gesture_glass_press_strength")
         private val GESTURE_WORD_PREVIEW = booleanPreferencesKey("gesture_word_preview")
         private val GESTURE_WORD_PREVIEW_OFFSET_Y = intPreferencesKey("gesture_word_preview_offset_y")
         private val GESTURE_WORD_PREVIEW_OFFSET_X = intPreferencesKey("gesture_word_preview_offset_x")
@@ -13307,6 +13324,15 @@ class SettingsRepository(private val context: Context) {
             trailWidthDp = p[GESTURE_TRAIL_WIDTH_DP] ?: defaults.gesture.trailWidthDp,
             trailDurationMs = p[GESTURE_TRAIL_DURATION_MS] ?: defaults.gesture.trailDurationMs,
             trailOpacity = p[GESTURE_TRAIL_OPACITY] ?: defaults.gesture.trailOpacity,
+            trailFadeSpeed = (p[GESTURE_TRAIL_FADE_SPEED] ?: defaults.gesture.trailFadeSpeed)
+                .coerceIn(0.5f, 3f),
+            trailColorMode = p[GESTURE_TRAIL_COLOR_MODE]
+                ?.let { runCatching { GlideTrailColorMode.valueOf(it) }.getOrNull() }
+                ?: defaults.gesture.trailColorMode,
+            trailCustomColor = p[GESTURE_TRAIL_CUSTOM_COLOR] ?: defaults.gesture.trailCustomColor,
+            glassPressEffects = p[GESTURE_GLASS_PRESS_EFFECTS] ?: defaults.gesture.glassPressEffects,
+            glassPressStrength = (p[GESTURE_GLASS_PRESS_STRENGTH] ?: defaults.gesture.glassPressStrength)
+                .coerceIn(0f, 1f),
             wordPreview = p[GESTURE_WORD_PREVIEW] ?: defaults.gesture.wordPreview,
             wordPreviewOffsetYDp = p[GESTURE_WORD_PREVIEW_OFFSET_Y]
                 ?: defaults.gesture.wordPreviewOffsetYDp,
@@ -20806,6 +20832,24 @@ class SettingsRepository(private val context: Context) {
     /** Zero is a real value here: it is how the trail is switched off. */
     suspend fun setGestureTrailOpacity(value: Float) =
         editPrefs { it[GESTURE_TRAIL_OPACITY] = value.coerceIn(0f, 1f) }
+
+    suspend fun setGestureTrailFadeSpeed(value: Float) =
+        editPrefs { it[GESTURE_TRAIL_FADE_SPEED] = value.coerceIn(0.5f, 3f) }
+
+    suspend fun setGestureTrailColorMode(value: GlideTrailColorMode) =
+        editPrefs { it[GESTURE_TRAIL_COLOR_MODE] = value.name }
+
+    suspend fun setGestureTrailCustomColor(value: Long?) =
+        editPrefs {
+            if (value == null) it.remove(GESTURE_TRAIL_CUSTOM_COLOR)
+            else it[GESTURE_TRAIL_CUSTOM_COLOR] = value and 0xFFFFFFFFL
+        }
+
+    suspend fun setGestureGlassPressEffects(value: Boolean) =
+        editPrefs { it[GESTURE_GLASS_PRESS_EFFECTS] = value }
+
+    suspend fun setGestureGlassPressStrength(value: Float) =
+        editPrefs { it[GESTURE_GLASS_PRESS_STRENGTH] = value.coerceIn(0f, 1f) }
 
     suspend fun setGestureWordPreview(value: Boolean) =
         editPrefs { it[GESTURE_WORD_PREVIEW] = value }
